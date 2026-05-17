@@ -21,6 +21,16 @@ type AutoFillData = {
   driveLink: string;
 };
 
+type AdminOptions = {
+  productTypes: string[];
+  brands: string[];
+  colors: string[];
+  modelTypes: string[];
+  views: string[];
+  seasons: string[];
+  collections: string[];
+};
+
 const initialData: AutoFillData = {
   password: "",
   etsyUrl: "",
@@ -40,18 +50,32 @@ const initialData: AutoFillData = {
   driveLink: "",
 };
 
+const emptyOptions: AdminOptions = {
+  productTypes: [],
+  brands: [],
+  colors: [],
+  modelTypes: [],
+  views: [],
+  seasons: [],
+  collections: [],
+};
+
 function Field({
   label,
   value,
   onChange,
   textarea = false,
   placeholder = "",
+  options = [],
+  listId,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   textarea?: boolean;
   placeholder?: string;
+  options?: string[];
+  listId?: string;
 }) {
   return (
     <div>
@@ -67,12 +91,23 @@ function Field({
           className="min-h-24 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-stone-950"
         />
       ) : (
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          className="h-12 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm font-bold outline-none focus:border-stone-950"
-        />
+        <>
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            list={listId}
+            className="h-12 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm font-bold outline-none focus:border-stone-950"
+          />
+
+          {listId && options.length > 0 && (
+            <datalist id={listId}>
+              {options.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
     </div>
   );
@@ -80,8 +115,11 @@ function Field({
 
 export default function AutoFillPage() {
   const [data, setData] = useState<AutoFillData>(initialData);
+  const [options, setOptions] = useState<AdminOptions>(emptyOptions);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
 
   const [message, setMessage] = useState<{
     type: "success" | "error" | "info";
@@ -96,11 +134,60 @@ export default function AutoFillPage() {
     }));
   }
 
+  async function loadOptions() {
+    if (!data.password) {
+      setMessage({
+        type: "error",
+        text: "Enter admin password first.",
+      });
+      return;
+    }
+
+    setOptionsLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/options", {
+        headers: {
+          "x-admin-password": data.password,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || result.error || "Failed to load options.");
+      }
+
+      setOptions(result.options || emptyOptions);
+
+      setMessage({
+        type: "success",
+        text: "Options loaded successfully.",
+      });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setOptionsLoading(false);
+    }
+  }
+
   async function fetchFromEtsy() {
     setLoading(true);
     setMessage(null);
 
     try {
+      if (
+        data.password &&
+        options.productTypes.length === 0 &&
+        !optionsLoading
+      ) {
+        await loadOptions();
+      }
+
       const response = await fetch("/api/admin/etsy-autofill", {
         method: "POST",
         headers: {
@@ -194,6 +281,8 @@ export default function AutoFillPage() {
         ...initialData,
         password: current.password,
       }));
+
+      await loadOptions();
     } catch (error) {
       setMessage({
         type: "error",
@@ -217,14 +306,13 @@ export default function AutoFillPage() {
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-stone-600">
-            Paste an Etsy product link. The system will try to pull the product title,
-            preview image and automatically suggest mockup fields. Then you only add
-            the file number and Drive link.
+            Paste an Etsy product link. The system will try to fill mockup fields.
+            You can choose from existing values or type a new value.
           </p>
         </div>
 
         <div className="mb-6 rounded-[2rem] border border-stone-200 bg-white/80 p-5 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-[1fr_1.5fr_auto]">
+          <div className="grid gap-4 md:grid-cols-[1fr_1.4fr_auto_auto]">
             <Field
               label="Admin Password"
               value={data.password}
@@ -238,6 +326,16 @@ export default function AutoFillPage() {
               onChange={(value) => update("etsyUrl", value)}
               placeholder="https://www.etsy.com/listing/4443981460/..."
             />
+
+            <div className="flex items-end">
+              <button
+                onClick={loadOptions}
+                disabled={optionsLoading}
+                className="h-12 w-full rounded-2xl border border-stone-200 bg-white px-5 text-sm font-black text-stone-950 transition hover:border-stone-950 disabled:opacity-50 md:w-auto"
+              >
+                {optionsLoading ? "Loading..." : "Load Options"}
+              </button>
+            </div>
 
             <div className="flex items-end">
               <button
@@ -319,42 +417,63 @@ export default function AutoFillPage() {
                 label="Product Type"
                 value={data.productType}
                 onChange={(value) => update("productType", value)}
+                options={options.productTypes}
+                listId="product-type-options"
+                placeholder="T-Shirt"
               />
 
               <Field
                 label="Brand"
                 value={data.brand}
                 onChange={(value) => update("brand", value)}
+                options={options.brands}
+                listId="brand-options"
+                placeholder="Comfort Colors"
               />
 
               <Field
                 label="Color"
                 value={data.color}
                 onChange={(value) => update("color", value)}
+                options={options.colors}
+                listId="color-options"
+                placeholder="White"
               />
 
               <Field
                 label="Model Type"
                 value={data.modelType}
                 onChange={(value) => update("modelType", value)}
+                options={options.modelTypes}
+                listId="model-type-options"
+                placeholder="Woman"
               />
 
               <Field
                 label="View"
                 value={data.view}
                 onChange={(value) => update("view", value)}
+                options={options.views}
+                listId="view-options"
+                placeholder="Front View"
               />
 
               <Field
                 label="Season"
                 value={data.season}
                 onChange={(value) => update("season", value)}
+                options={options.seasons}
+                listId="season-options"
+                placeholder="All Season"
               />
 
               <Field
                 label="Collection"
                 value={data.collection}
                 onChange={(value) => update("collection", value)}
+                options={options.collections}
+                listId="collection-options"
+                placeholder="Comfort Colors T-Shirt"
               />
 
               <Field
