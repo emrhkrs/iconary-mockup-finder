@@ -66,15 +66,16 @@ const steps: Step[] = [
   {
     key: "productType",
     label: "Product Type",
-    help: "Choose the product type.",
-    type: "select",
+    help: "Choose an existing product type or type a new one.",
+    type: "combo",
     required: true,
     options: ["T-Shirt", "Sweatshirt", "Hoodie", "Baby Tee", "Kids T-Shirt", "Tote Bag"],
+    placeholder: "T-Shirt",
   },
   {
     key: "brand",
     label: "Brand",
-    help: "Choose a brand or type a new one.",
+    help: "Choose an existing brand or type a new one.",
     type: "combo",
     required: true,
     options: ["Comfort Colors", "Gildan", "Bella Canvas", "Generic"],
@@ -91,26 +92,29 @@ const steps: Step[] = [
   {
     key: "modelType",
     label: "Model Type",
-    help: "Choose the model type.",
-    type: "select",
+    help: "Choose an existing model type or type a new one.",
+    type: "combo",
     required: true,
     options: ["Woman", "Man", "Kids", "Couple", "Group", "No Model"],
+    placeholder: "Woman",
   },
   {
     key: "view",
     label: "View",
-    help: "Choose the mockup view.",
-    type: "select",
+    help: "Choose an existing view or type a new one.",
+    type: "combo",
     required: true,
     options: ["Front View", "Back View", "Flat Lay", "Close Up", "Chin Down", "Mirror View"],
+    placeholder: "Front View",
   },
   {
     key: "season",
     label: "Season",
-    help: "Choose All Season if this is not seasonal.",
-    type: "select",
+    help: "Choose an existing season/category or type a new one.",
+    type: "combo",
     required: true,
     options: ["All Season", "Summer", "Spring", "Fall", "Winter", "Christmas", "Valentine", "Halloween"],
+    placeholder: "All Season",
   },
   {
     key: "styleTags",
@@ -614,26 +618,28 @@ export default function AdminPage() {
     }
 
     if (step.type === "combo") {
-      return (
-        <>
-          <input
-            list="brand-options"
-            value={data[key]}
-            onChange={(event) => updateValue(key, event.target.value)}
-            placeholder={step.placeholder}
-            className="h-14 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm font-bold outline-none focus:border-stone-950"
-          />
-          <datalist id="brand-options">
-            {(step.options || []).map((option) => (
-              <option key={option} value={option} />
-            ))}
-          </datalist>
-          <p className="mt-3 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">
-            You can type a new brand
-          </p>
-        </>
-      );
-    }
+  const listId = `${String(step.key)}-options`;
+
+  return (
+    <>
+      <input
+        list={listId}
+        value={data[key]}
+        onChange={(event) => updateValue(key, event.target.value)}
+        placeholder={step.placeholder}
+        className="h-14 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm font-bold outline-none focus:border-stone-950"
+      />
+      <datalist id={listId}>
+        {(step.options || []).map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+      <p className="mt-3 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-500">
+        You can choose from the list or type a new value
+      </p>
+    </>
+  );
+}
 
     return (
       <input
