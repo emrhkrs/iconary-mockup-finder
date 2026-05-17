@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 
 type AdminMockupInput = {
+  id?: number;
   password?: string;
   fileNumber?: string;
   title?: string;
@@ -18,6 +19,30 @@ type AdminMockupInput = {
   previewImage?: string;
   driveLink?: string;
 };
+
+function checkPassword(password?: string | null) {
+  if (!process.env.ADMIN_PASSWORD) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { ok: false, message: "ADMIN_PASSWORD is missing." },
+        { status: 500 }
+      ),
+    };
+  }
+
+  if (password !== process.env.ADMIN_PASSWORD) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { ok: false, message: "Invalid admin password." },
+        { status: 401 }
+      ),
+    };
+  }
+
+  return { ok: true, response: null };
+}
 
 function cleanText(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -36,7 +61,6 @@ function normalizeValue(value: unknown) {
 
 function titleCase(value: unknown) {
   const cleaned = cleanText(value);
-
   if (!cleaned) return "";
 
   return cleaned
@@ -53,6 +77,7 @@ function normalizeProductType(value: unknown, fileNumber: unknown) {
   if (text.includes("hoodie")) return "Hoodie";
   if (text.includes("sweatshirt") || text.includes("sweat")) return "Sweatshirt";
   if (text.includes("tote")) return "Tote Bag";
+
   if (
     text.includes("t shirt") ||
     text.includes("tshirt") ||
@@ -212,89 +237,150 @@ function generateStyleTags(item: {
   return [...new Set(tags)].join(", ");
 }
 
+function mapMockup(item: any) {
+  return {
+    id: item.id,
+    fileNumber: item.file_number,
+    title: item.title,
+    productType: item.product_type,
+    brand: item.brand,
+    color: item.color,
+    modelType: item.model_type,
+    view: item.view,
+    styleTags: item.style_tags || "",
+    season: item.season || "All Season",
+    collection: item.collection || "",
+    etsyListingId: item.etsy_listing_id || "",
+    previewImage: item.preview_image,
+    driveLink: item.drive_link,
+    createdAt: item.created_at,
+  };
+}
+
+function prepareMockup(body: AdminMockupInput) {
+  const etsyListingId =
+    cleanText(body.etsyListingId) || extractEtsyListingId(body.etsyUrl);
+
+  const cleaned = {
+    file_number: cleanText(body.fileNumber),
+    product_type: normalizeProductType(body.productType, body.fileNumber),
+    brand: normalizeBrand(body.brand, body.fileNumber),
+    color: titleCase(body.color),
+    model_type: normalizeModelType(body.modelType),
+    view: normalizeView(body.view),
+    season: normalizeSeason(body.season),
+    collection: cleanText(body.collection),
+    etsy_listing_id: etsyListingId,
+    preview_image: cleanText(body.previewImage),
+    drive_link: cleanText(body.driveLink),
+    title: cleanText(body.title),
+    style_tags: cleanText(body.styleTags),
+  };
+
+  if (!cleaned.file_number) throw new Error("File number is required.");
+  if (!cleaned.product_type) throw new Error("Product type is required.");
+  if (!cleaned.brand) throw new Error("Brand is required.");
+  if (!cleaned.color) throw new Error("Color is required.");
+  if (!cleaned.model_type) throw new Error("Model type is required.");
+  if (!cleaned.view) throw new Error("View is required.");
+  if (!cleaned.preview_image) throw new Error("Preview image link is required.");
+  if (!cleaned.drive_link) throw new Error("Drive link is required.");
+
+  if (!cleaned.collection) {
+    cleaned.collection = generateCollection({
+      brand: cleaned.brand,
+      productType: cleaned.product_type,
+      season: cleaned.season,
+    });
+  }
+
+  if (!cleaned.title) {
+    cleaned.title = generateTitle({
+      brand: cleaned.brand,
+      color: cleaned.color,
+      modelType: cleaned.model_type,
+      season: cleaned.season,
+      view: cleaned.view,
+      productType: cleaned.product_type,
+    });
+  }
+
+  if (!cleaned.style_tags) {
+    cleaned.style_tags = generateStyleTags({
+      productType: cleaned.product_type,
+      brand: cleaned.brand,
+      color: cleaned.color,
+      modelType: cleaned.model_type,
+      view: cleaned.view,
+      season: cleaned.season,
+      collection: cleaned.collection,
+      etsyListingId: cleaned.etsy_listing_id,
+    });
+  }
+
+  return cleaned;
+}
+
+export async function GET(request: NextRequest) {
+  const password = request.headers.get("x-admin-password");
+  const auth = checkPassword(password);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const { searchParams } = new URL(request.url);
+  const search = cleanText(searchParams.get("search"));
+
+  let query = supabaseAdmin
+    .from("mockups")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (search) {
+    const safeSearch = search.replace(/[,%]/g, " ");
+    query = query.or(
+      [
+        `title.ilike.%${safeSearch}%`,
+        `file_number.ilike.%${safeSearch}%`,
+        `brand.ilike.%${safeSearch}%`,
+        `color.ilike.%${safeSearch}%`,
+        `product_type.ilike.%${safeSearch}%`,
+        `etsy_listing_id.ilike.%${safeSearch}%`,
+      ].join(",")
+    );
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Failed to load mockups",
+        error: error.message,
+      },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    mockups: (data || []).map(mapMockup),
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as AdminMockupInput;
+    const auth = checkPassword(body.password);
 
-    if (!process.env.ADMIN_PASSWORD) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "ADMIN_PASSWORD is missing in .env.local",
-        },
-        { status: 500 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
-    if (body.password !== process.env.ADMIN_PASSWORD) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: "Invalid admin password",
-        },
-        { status: 401 }
-      );
-    }
-
-    const etsyListingId =
-      cleanText(body.etsyListingId) || extractEtsyListingId(body.etsyUrl);
-
-    const cleaned = {
-      file_number: cleanText(body.fileNumber),
-      product_type: normalizeProductType(body.productType, body.fileNumber),
-      brand: normalizeBrand(body.brand, body.fileNumber),
-      color: titleCase(body.color),
-      model_type: normalizeModelType(body.modelType),
-      view: normalizeView(body.view),
-      season: normalizeSeason(body.season),
-      collection: cleanText(body.collection),
-      etsy_listing_id: etsyListingId,
-      preview_image: cleanText(body.previewImage),
-      drive_link: cleanText(body.driveLink),
-      title: cleanText(body.title),
-      style_tags: cleanText(body.styleTags),
-    };
-
-    if (!cleaned.file_number) throw new Error("File number is required.");
-    if (!cleaned.product_type) throw new Error("Product type is required.");
-    if (!cleaned.brand) throw new Error("Brand is required.");
-    if (!cleaned.color) throw new Error("Color is required.");
-    if (!cleaned.model_type) throw new Error("Model type is required.");
-    if (!cleaned.view) throw new Error("View is required.");
-    if (!cleaned.preview_image) throw new Error("Preview image link is required.");
-    if (!cleaned.drive_link) throw new Error("Drive link is required.");
-
-    if (!cleaned.collection) {
-      cleaned.collection = generateCollection({
-        brand: cleaned.brand,
-        productType: cleaned.product_type,
-        season: cleaned.season,
-      });
-    }
-
-    if (!cleaned.title) {
-      cleaned.title = generateTitle({
-        brand: cleaned.brand,
-        color: cleaned.color,
-        modelType: cleaned.model_type,
-        season: cleaned.season,
-        view: cleaned.view,
-        productType: cleaned.product_type,
-      });
-    }
-
-    if (!cleaned.style_tags) {
-      cleaned.style_tags = generateStyleTags({
-        productType: cleaned.product_type,
-        brand: cleaned.brand,
-        color: cleaned.color,
-        modelType: cleaned.model_type,
-        view: cleaned.view,
-        season: cleaned.season,
-        collection: cleaned.collection,
-        etsyListingId: cleaned.etsy_listing_id,
-      });
-    }
+    const cleaned = prepareMockup(body);
 
     const { data: existingFile } = await supabaseAdmin
       .from("mockups")
@@ -351,6 +437,147 @@ export async function POST(request: NextRequest) {
       ok: true,
       message: "Mockup added successfully",
       mockup: data,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 400 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = (await request.json()) as AdminMockupInput;
+    const auth = checkPassword(body.password);
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    if (!body.id) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Mockup ID is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const cleaned = prepareMockup(body);
+
+    const { data: existingFile } = await supabaseAdmin
+      .from("mockups")
+      .select("id")
+      .eq("file_number", cleaned.file_number)
+      .neq("id", body.id)
+      .maybeSingle();
+
+    if (existingFile) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Another mockup already uses this file number.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (cleaned.etsy_listing_id) {
+      const { data: existingEtsy } = await supabaseAdmin
+        .from("mockups")
+        .select("id")
+        .eq("etsy_listing_id", cleaned.etsy_listing_id)
+        .neq("id", body.id)
+        .maybeSingle();
+
+      if (existingEtsy) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: "Another mockup already uses this Etsy Listing ID.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("mockups")
+      .update(cleaned)
+      .eq("id", body.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Failed to update mockup",
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: "Mockup updated successfully",
+      mockup: data,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 400 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = (await request.json()) as AdminMockupInput;
+    const auth = checkPassword(body.password);
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    if (!body.id) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Mockup ID is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabaseAdmin
+      .from("mockups")
+      .delete()
+      .eq("id", body.id);
+
+    if (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Failed to delete mockup",
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: "Mockup deleted successfully",
     });
   } catch (error) {
     return NextResponse.json(
