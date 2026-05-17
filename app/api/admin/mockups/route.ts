@@ -20,7 +20,11 @@ type AdminMockupInput = {
   driveLink?: string;
 };
 
-function checkPassword(password?: string | null) {
+type AuthResult =
+  | { ok: true }
+  | { ok: false; response: NextResponse };
+
+function checkPassword(password?: string | null): AuthResult {
   if (!process.env.ADMIN_PASSWORD) {
     return {
       ok: false,
@@ -41,7 +45,7 @@ function checkPassword(password?: string | null) {
     };
   }
 
-  return { ok: true, response: null };
+  return { ok: true };
 }
 
 function cleanText(value: unknown) {
