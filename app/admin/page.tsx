@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[#f8f4ed] px-5 py-10 text-stone-950">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <p className="text-xs font-black uppercase tracking-[0.28em] text-stone-500">
           ICONARY
         </p>
@@ -16,7 +16,7 @@ export default function AdminPage() {
           Manage your mockup library tools from here.
         </p>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Link
             href="/admin/autofill"
             className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
@@ -58,6 +58,28 @@ export default function AdminPage() {
 
             <div className="mt-5 inline-flex rounded-2xl bg-stone-950 px-4 py-3 text-sm font-black text-white">
               Open Manage
+            </div>
+          </Link>
+
+          <Link
+            href="/admin/batch-add"
+            className="rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-stone-400">
+              Batch
+            </p>
+
+            <h2 className="mt-3 text-2xl font-black tracking-[-0.04em]">
+              Batch Add Mockups
+            </h2>
+
+            <p className="mt-3 text-sm font-semibold leading-6 text-stone-600">
+              Choose fixed settings once, then save many mockups from the same
+              group much faster.
+            </p>
+
+            <div className="mt-5 inline-flex rounded-2xl bg-stone-950 px-4 py-3 text-sm font-black text-white">
+              Open Batch Add
             </div>
           </Link>
 
